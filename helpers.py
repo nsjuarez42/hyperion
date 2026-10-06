@@ -80,3 +80,66 @@ async def validate_file(path: str) -> dict:
         )
 
     return response.json()
+
+
+class WriteFileError(Exception):
+    """The IDE could not write the file."""
+
+
+class DeleteFileError(Exception):
+    """The IDE could not delete the file."""
+
+
+def _error_message(response: httpx.Response) -> str:
+    try:
+        body = response.json()
+    except ValueError:
+        return f"HTTP {response.status_code}"
+    return body.get("error", f"HTTP {response.status_code}")
+
+
+async def create_workspace_file(path: str, content: str) -> None:
+    """Create a new file. Fails if that path already exists."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                f"{IDE_BACKEND_URL}/file/create",
+                json={"path": path, "content": content},
+            )
+    except httpx.HTTPError as exc:
+        raise WriteFileError(
+            f"cannot reach the IDE backend at {IDE_BACKEND_URL} ({exc})"
+        ) from exc
+    if response.status_code != 200:
+        raise WriteFileError(_error_message(response))
+
+
+async def write_workspace_file(path: str, content: str) -> None:
+    """Create or replace a file."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                f"{IDE_BACKEND_URL}/file",
+                json={"path": path, "content": content},
+            )
+    except httpx.HTTPError as exc:
+        raise WriteFileError(
+            f"cannot reach the IDE backend at {IDE_BACKEND_URL} ({exc})"
+        ) from exc
+    if response.status_code != 200:
+        raise WriteFileError(_error_message(response))
+
+
+async def delete_workspace_file(path: str) -> None:
+    """Delete a file or folder. The IDE panel normally does this from an action event."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.delete(
+                f"{IDE_BACKEND_URL}/delete", params={"path": path}
+            )
+    except httpx.HTTPError as exc:
+        raise DeleteFileError(
+            f"cannot reach the IDE backend at {IDE_BACKEND_URL} ({exc})"
+        ) from exc
+    if response.status_code != 200:
+        raise DeleteFileError(_error_message(response))

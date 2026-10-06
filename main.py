@@ -9,6 +9,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from ide_agent import stream_ide_action
 from rag import RETRIEVER 
 
 load_dotenv()
@@ -172,6 +173,22 @@ async def generate_reply(request: ChatRequest):
     if route == "off_topic":
         # Not saved: a refusal must not become context the model can be talked out of.
         yield sse(OFF_TOPIC_REFUSAL)
+        yield "data: [DONE]\n\n"
+        return
+
+    if route == "ide_action":
+        reply = ""
+        failed = False
+        async for kind, payload in stream_ide_action(
+            request.user_id, request.text, get_history(request.user_id)
+        ):
+            if kind == "error":
+                failed = True
+            elif kind == "text":
+                reply = payload
+            yield sse(payload)
+        if not failed:
+            save_turn(request.user_id, request.text, reply)
         yield "data: [DONE]\n\n"
         return
 
