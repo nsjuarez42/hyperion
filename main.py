@@ -7,7 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
-from langchain_core.messages import SystemMessage,HumanMessage,AIMessage 
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+from rag import RETRIEVER 
 
 load_dotenv()
 
@@ -144,6 +146,26 @@ async def stream_llm(messages: list, user_id: str, user_text: str):
     yield "data: [DONE]\n\n"
 
 
+def prompt_for(route: str, question: str) -> str:
+    if route != "hyperai":
+        return SYSTEM_PROMPT
+    chunks = RETRIEVER.retrieve(question)
+    print(f"rag={[chunk['source'] for chunk in chunks]}", flush=True)
+    if chunks:
+        context = "\n\n".join(
+            f"Source: {chunk['source']}\n{chunk['text']}" for chunk in chunks
+        )
+    else:
+        context = "(none)"
+    return f"""{SYSTEM_PROMPT}
+
+Answer using only the documentation excerpts below. If they do not contain the answer, say "I don't know".
+Do not add facts from outside the excerpts.
+
+Documentation:
+{context}"""
+
+
 async def generate_reply(request: ChatRequest):
     route = await classify(request.user_id, request.text)
     print(f"route={route} text={request.text!r}", flush=True)
@@ -154,7 +176,7 @@ async def generate_reply(request: ChatRequest):
         return
 
     messages = [
-        SystemMessage(content=SYSTEM_PROMPT),
+        SystemMessage(content=prompt_for(route, request.text)),
         *get_history(request.user_id),
         HumanMessage(content=request.text),
     ]
