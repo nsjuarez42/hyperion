@@ -251,6 +251,132 @@ SERVICES = {
     "postgres": ("docker.io/library/postgres", "16", "postgres", 5432, "[]"),
 }
 
+SKIP_NAMES = {
+    "a",
+    "an",
+    "the",
+    "to",
+    "as",
+    "on",
+    "from",
+    "into",
+    "for",
+    "service",
+    "deployment",
+    "container",
+    "file",
+    "yaml",
+    "yml",
+    "app",
+    "application",
+    "profile",
+    "native",
+    "device",
+    "docker",
+    "image",
+    "using",
+}
+
+DEVICE_TAIL = """
+  network:
+    ports:
+      - port: {port}
+        protocol: "HTTP"
+    networkBandwidthMin: { value: 1, unit: "Mbps" }
+  qos:
+    latencyToleranceMax: { value: 500, unit: "ms" }
+    energyCost: { value: 1, unit: "W" }
+    monetaryCost: { value: 0.01, currency: "USD", per: "hour" }
+    resilience: "auto-restart"
+    availability: { value: 0.9, unit: "fraction" }
+    startupTime: { value: 5, unit: "s" }
+  constraints:
+    schedulingPriority: 1
+    supportedArchitectures: ["amd64", "arm64"]
+    geoLocationRequirement: "LocalZone"
+    isHighlyAvailable: false
+    faultTolerance: "graceful-degradation"
+    dataClassification: "internal"
+"""
+
+DEVICE_DOCKER = (
+    """apiVersion: hyper.ai/v1
+kind: Application
+metadata:
+  name: {name}
+  annotations:
+    intent: "{description}"
+spec:
+  app:
+    type: device
+    schemaVersion: "1.0.0"
+    name: "{name}"
+    version: "1.0.0"
+    description: "{description}"
+    owner: "hyperion"
+    lifecyclePhase: "development"
+  workload:
+    kind: DockerImage
+    dockerImage:
+      image: "{image_ref}"
+      imagePullPolicy: "IfNotPresent"
+"""
+    + DEVICE_TAIL
+)
+
+DEVICE_ANDROID = (
+    """apiVersion: hyper.ai/v1
+kind: Application
+metadata:
+  name: {name}
+  annotations:
+    intent: "{description}"
+spec:
+  app:
+    type: device
+    schemaVersion: "1.0.0"
+    name: "{name}"
+    version: "1.0.0"
+    description: "{description}"
+    owner: "hyperion"
+    lifecyclePhase: "development"
+  workload:
+    kind: AndroidApk
+    androidApk:
+      apkUrl: "{apk_url}"
+      packageName: "{package}"
+      installMode: "install"
+"""
+    + DEVICE_TAIL
+)
+
+DEVICE_ESP32 = (
+    """apiVersion: hyper.ai/v1
+kind: Application
+metadata:
+  name: {name}
+  annotations:
+    intent: "{description}"
+spec:
+  app:
+    type: device
+    schemaVersion: "1.0.0"
+    name: "{name}"
+    version: "1.0.0"
+    description: "{description}"
+    owner: "hyperion"
+    lifecyclePhase: "development"
+  workload:
+    kind: esp32Binary
+    esp32Binary:
+      binaryUrl: "{binary_url}"
+      chip: {chip}
+      flash:
+        method: {flash_method}
+"""
+    + DEVICE_TAIL
+)
+
 
 def fill(template: str, **values: object) -> str:
     rendered = template
@@ -259,26 +385,190 @@ def fill(template: str, **values: object) -> str:
     return rendered
 
 
+def file_stem(path: str) -> str:
+    return path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+
+
+def extract_port(text: str, default: int) -> int:
+    match = re.search(r"\bport\s+(\d{2,5})\b", text, re.IGNORECASE)
+    if not match:
+        return default
+    port = int(match.group(1))
+    return port if 1 <= port <= 65535 else default
+
+
+def split_image(ref: str) -> tuple[str, str | None]:
+    ref = ref.strip().strip("`").rstrip(".,)")
+    tag = None
+    if ":" in ref.split("/")[-1]:
+        ref, tag = ref.rsplit(":", 1)
+    if ref and "/" not in ref:
+        ref = f"docker.io/library/{ref}"
+    return ref, tag
+
+
+def extract_image_ref(text: str) -> str | None:
+    patterns = (
+        r"\b((?:[a-z0-9.-]+\.)+[a-z]{2,}/[a-z0-9._/-]+(?::[a-z0-9._-]+)?)\b",
+        r"\b([a-z0-9][\w.-]*(?:/[a-z0-9][\w.-]*)*:[a-zA-Z0-9][\w.-]*)\b",
+        r"using (?:the )?([a-z0-9][\w./:-]*?)(?:\s+docker)?\s+image",
+        r"\bimage\s+([a-z0-9][\w./:-]+)",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            ref = match.group(1).strip().rstrip(".,)")
+            if (
+                ref.lower() in SKIP_NAMES
+                or ref.lower().split("/")[-1].split(":")[0] in SKIP_NAMES
+            ):
+                continue
+            return ref
+    return None
+
+
+def resolve_service(request: str, path: str) -> tuple[str, str, str, int, str]:
+    """Return image, tag, entrypoint, port, and YAML args for a container."""
+    stem = file_stem(path)
+    ref = extract_image_ref(request)
+    image, tag = split_image(ref) if ref else (None, None)
+    key = basename_of(image).lower() if image else None
+    if key not in SERVICES:
+        for name in SERVICES:
+            if (
+                re.search(rf"\b{name}\b", request, re.IGNORECASE)
+                or name in stem.lower()
+            ):
+                key = name
+                break
+    if key not in SERVICES:
+        named = re.search(
+            r"\bfor (?:a |an |the )?([a-z0-9][\w.-]+)", request, re.IGNORECASE
+        )
+        if named and named.group(1).lower() not in SKIP_NAMES:
+            key = named.group(1).lower()
+    if key in SERVICES:
+        catalog_image, catalog_tag, entry, port, args = SERVICES[key]
+        image = image or catalog_image
+        tag = tag or catalog_tag
+    else:
+        if image is None:
+            guess = stem if stem.lower() not in SKIP_NAMES else "nginx"
+            image, guessed_tag = split_image(guess)
+            tag = tag or guessed_tag
+        entry = basename_of(image)
+        port = 80
+        args = '["-g", "daemon off;"]' if entry == "nginx" else "[]"
+        tag = tag or "latest"
+    return image, tag or "latest", entry, extract_port(request, port), args
+
+
+def basename_of(image: str) -> str:
+    return image.rsplit("/", 1)[-1]
+
+
+def image_ref(image: str, tag: str) -> str:
+    if image.startswith("docker.io/library/"):
+        return f"{basename_of(image)}:{tag}"
+    return f"{image}:{tag}"
+
+
 def render_native(request: str, path: str) -> str:
-    """A known-valid native profile. The 8B model invents schemas, so code fills this one."""
-    lowered = request.lower()
-    name = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
-    image, tag, entry, port, args = SERVICES["nginx"]
-    for key, spec in SERVICES.items():
-        if key in lowered or key in name.lower():
-            image, tag, entry, port, args = spec
-            break
-    description = f"{name} service"
+    """A known-valid native profile. Code fills the schema; the model does not invent it."""
+    name = file_stem(path)
+    image, tag, entry, port, args = resolve_service(request, path)
     return fill(
         NATIVE_TEMPLATE,
         name=name,
-        description=description,
+        description=f"{name} service",
         entry=entry,
         args=args,
         image=image,
         tag=tag,
         port=port,
     )
+
+
+def _device_kind(text: str) -> str | None:
+    lowered = text.lower()
+    if "esp32" in lowered:
+        return "esp32"
+    if "apk" in lowered or "android" in lowered:
+        return "android"
+    if any(
+        word in lowered
+        for word in (
+            "phone",
+            "glasses",
+            "devicenode",
+            "device node",
+            "device app",
+            "on a device",
+        )
+    ):
+        return "docker"
+    return None
+
+
+def render_device(request: str, path: str, kind: str) -> str:
+    name = file_stem(path)
+    description = f"{name} device application"
+    port = extract_port(request, 80)
+    if kind == "android":
+        apk = re.search(r"https?://\S+?\.apk", request, re.IGNORECASE)
+        package = re.search(r"\bcom(?:\.[a-zA-Z0-9_]+)+\b", request)
+        return fill(
+            DEVICE_ANDROID,
+            name=name,
+            description=description,
+            apk_url=(
+                apk.group(0).rstrip(".,)") if apk else "https://example.com/app.apk"
+            ),
+            package=(package.group(0) if package else "com.example.app"),
+            port=port,
+        )
+    if kind == "esp32":
+        binary = re.search(r"https?://\S+?\.bin", request, re.IGNORECASE)
+        chip = "esp32"
+        for candidate in (
+            "esp32h2",
+            "esp32c6",
+            "esp32c3",
+            "esp32s3",
+            "esp32s2",
+            "esp32",
+        ):
+            if candidate in request.lower():
+                chip = candidate
+                break
+        method = "serial" if "serial" in request.lower() else "ota"
+        return fill(
+            DEVICE_ESP32,
+            name=name,
+            description=description,
+            binary_url=(
+                binary.group(0).rstrip(".,)")
+                if binary
+                else "https://example.com/firmware.bin"
+            ),
+            chip=chip,
+            flash_method=method,
+            port=port,
+        )
+    image, tag, _entry, port, _args = resolve_service(request, path)
+    return fill(
+        DEVICE_DOCKER,
+        name=name,
+        description=description,
+        image_ref=image_ref(image, tag),
+        port=port,
+    )
+
+
+def render_profile(request: str, path: str) -> str:
+    kind = _device_kind(request)
+    if kind:
+        return render_device(request, path, kind)
+    return render_native(request, path)
 
 
 async def generate_yaml(
@@ -391,13 +681,7 @@ async def stream_ide_action(user_id: str, text: str, history: list):
             )
             return
 
-        if any(
-            word in text.lower()
-            for word in ("android", "apk", "esp32", "phone", "glasses")
-        ):
-            content = await generate_yaml(text, path)
-        else:
-            content = render_native(text, path)
+        content = render_profile(text, path)
         if await file_exists(path):
             pending[user_id] = {"op": "overwrite", "path": path, "content": content}
             yield (
