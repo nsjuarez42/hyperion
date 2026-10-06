@@ -11,13 +11,13 @@ from pydantic import BaseModel
 load_dotenv()
 
 API_KEY = os.environ.get("API_KEY", "")
-BASE_URL = "https://legion1.di.uoa.gr/v1"
-MODEL = "llama3.1"
+BASE_URL = os.environ.get("BASE_URL", "https://legion1.di.uoa.gr/v1")
+MODEL = os.environ.get("MODEL", "llama3.1")
 
 llm = ChatOpenAI(
     model=MODEL,
     base_url=BASE_URL,
-    api_key=API_KEY,
+    api_key=API_KEY or "missing",
     max_completion_tokens=2048,
 )
 
@@ -37,9 +37,13 @@ class ChatRequest(BaseModel):
 
 
 async def generate_reply(request: ChatRequest):
-    async for chunk in llm.astream(request.text):
-        if chunk.text:
-            yield f"data: {json.dumps({'response': chunk.text})}\n\n"
+    try:
+        async for chunk in llm.astream(request.text):
+            if chunk.text:
+                yield f"data: {json.dumps({'response': chunk.text})}\n\n"
+    except Exception as e:
+        print(f"Error generating reply: {e}")
+        yield f"data: {json.dumps({'response': f'Sorry, I could not reach the language model.'})}\n\n"
     yield "data: [DONE]\n\n"
 
 
