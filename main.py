@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from ide_agent import stream_ide_action
+from ide_agent import has_pending, stream_ide_action, stream_pending
 from rag import RETRIEVER 
 
 load_dotenv()
@@ -168,6 +168,16 @@ Documentation:
 
 
 async def generate_reply(request: ChatRequest):
+    if has_pending(request.user_id):
+        reply = ""
+        async for kind, payload in stream_pending(request.user_id, request.text):
+            if kind == "text":
+                reply = payload
+            yield sse(payload)
+        save_turn(request.user_id, request.text, reply)
+        yield "data: [DONE]\n\n"
+        return
+
     route = await classify(request.user_id, request.text)
     print(f"route={route} text={request.text!r}", flush=True)
     if route == "off_topic":

@@ -32,6 +32,7 @@ tool_llm = ChatOpenAI(
 )
 
 OPS = ("write", "read", "validate", "delete")
+pending: dict[str, dict] = {}
 
 PLAN_SYSTEM = """You plan one IDE file action. Call plan_ide_action and nothing else.
 op is write (create or replace a file), read (show a file), validate (check a file), or delete.
@@ -303,6 +304,55 @@ async def save_yaml(path: str, content: str) -> dict:
     return await validate_file(path)
 
 
+def interpret_confirmation(text: str) -> bool | None:
+    cleaned = re.sub(r"[.!?]+$", "", text.strip().lower())
+    if re.fullmatch(r"(yes|y|yeah|yep|ok|okay|sure|confirm|do it|go ahead)", cleaned):
+        return True
+    if re.fullmatch(r"(no|n|nope|cancel|stop|don't|do not)( thanks)?", cleaned):
+        return False
+    if re.match(r"yes\b", cleaned):
+        return True
+    if re.match(r"(no|don't|do not|cancel)\b", cleaned):
+        return False
+    return None
+
+
+def has_pending(user_id: str) -> bool:
+    return user_id in pending
+
+
+async def stream_pending(user_id: str, text: str):
+    """A yes/no for a delete or overwrite is decided in code, not by the router."""
+    action = pending.get(user_id)
+    if action is None:
+        return
+    decision = interpret_confirmation(text)
+    path = action["path"]
+    if decision is None:
+        yield (
+            "text",
+            f"I'm still waiting. Reply yes to {action['op']} {path}, or no to cancel.",
+        )
+        return
+    pending.pop(user_id, None)
+    if not decision:
+        yield ("text", f"Cancelled. I left {path} unchanged.")
+        return
+    if action["op"] == "delete":
+        yield ("text", f"Deleting {path}.")
+        yield ("action", {"action": "delete_file", "path": path})
+        return
+    try:
+        content = action["content"]
+        report = await save_yaml(path, content)
+    except (ReadFileError, ValidateFileError, WriteFileError) as exc:
+        yield ("text", str(exc))
+        return
+    verdict = format_report(report)
+    yield ("text", f"Overwrote {path} and opened it in the editor. {verdict}")
+    yield ("action", {"action": "edit_file", "path": path, "content": content})
+
+
 async def stream_ide_action(user_id: str, text: str, history: list):
     """Yield ("text"|"action"|"error", payload) for one IDE-action turn."""
     try:
@@ -332,15 +382,24 @@ async def stream_ide_action(user_id: str, text: str, history: list):
             if not await file_exists(path):
                 yield ("text", f"{path} is not in the workspace")
                 return
-            # The IDE performs the delete when it sees this action, and updates the editor.
-            yield ("text", f"Deleting {path}.")
-            yield ("action", {"action": "delete_file", "path": path})
+            pending[user_id] = {"op": "delete", "path": path}
+            yield (
+                "text",
+                f"I'm about to delete {path}. Reply yes to confirm or no to cancel.",
+            )
             return
 
         if any(word in text.lower() for word in ("android", "apk", "esp32", "phone", "glasses")):
             content = await generate_yaml(text, path)
         else:
             content = render_native(text, path)
+        if await file_exists(path):
+            pending[user_id] = {"op": "overwrite", "path": path, "content": content}
+            yield (
+                "text",
+                f"I'm about to overwrite {path}. Reply yes to confirm or no to cancel.",
+            )
+            return
         report = await save_yaml(path, content)
         if not report.get("valid"):
             content = await generate_yaml(text, path, content, format_report(report))
