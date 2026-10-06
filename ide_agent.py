@@ -281,7 +281,9 @@ def render_native(request: str, path: str) -> str:
     )
 
 
-async def generate_yaml(request: str, path: str, previous: str = "", errors: str = "") -> str:
+async def generate_yaml(
+    request: str, path: str, previous: str = "", errors: str = ""
+) -> str:
     if previous:
         human = (
             f"File: {path}\nRequest: {request}\n\n"
@@ -389,7 +391,10 @@ async def stream_ide_action(user_id: str, text: str, history: list):
             )
             return
 
-        if any(word in text.lower() for word in ("android", "apk", "esp32", "phone", "glasses")):
+        if any(
+            word in text.lower()
+            for word in ("android", "apk", "esp32", "phone", "glasses")
+        ):
             content = await generate_yaml(text, path)
         else:
             content = render_native(text, path)

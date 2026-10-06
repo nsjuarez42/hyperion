@@ -10,6 +10,7 @@ COPY main.py helpers.py rag.py ide_agent.py ./
 COPY knowledge ./knowledge
 
 ENV IDE_BACKEND_URL=http://host.docker.internal:3001/api
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
