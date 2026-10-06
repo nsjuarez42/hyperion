@@ -40,7 +40,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SYSTEM_PROMPT = """You are Hyperion, the AI assistant for the Hyper-AI IDE, you keep answers short and concise and you are helpful, clever and direct. """
+SYSTEM_PROMPT = """You are Hyperion, the assistant inside the HYPER-AI IDE.
+Answer only about HYPER-AI, its platform, and this IDE.
+You have no internet access and no real-time data. If you are not sure, say "I don't know".
+When the user disagrees with you, check the conversation and correct yourself if they are right. Do not agree just to be polite.
+Keep answers short and concise."""
+
+OFF_TOPIC_REFUSAL = (
+    "I can only help with HYPER-AI and the HyperAI IDE. "
+    "Try asking what HYPER-AI is, or ask me to create a deployment YAML."
+)
 
 ROUTES = ["ide_action", "hyperai", "chitchat", "off_topic"]
 FALLBACK_ROUTE = "chitchat"  # fail open: the main system prompt is the second line of defence
@@ -114,24 +123,43 @@ class ChatRequest(BaseModel):
     text: str  # the text the user typed in the chat
 
 
-async def generate_reply(request: ChatRequest):
-    messages = [SystemMessage(content=SYSTEM_PROMPT),
-                *get_history(request.user_id),
-                HumanMessage(content=request.text)]
+def sse(payload: dict | str) -> str:
+    if isinstance(payload, str):
+        payload = {"response": payload}
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+async def stream_llm(messages: list, user_id: str, user_text: str):
     reply = ""
-    route = await classify(request.user_id, request.text)
-    print(f"route={route} text={request.text!r}", flush=True)
     try:
         async for chunk in llm.astream(messages):
             if chunk.text:
                 reply += chunk.text
-                yield f"data: {json.dumps({'response': chunk.text})}\n\n"
+                yield sse(chunk.text)
     except Exception as e:
         print(f"Error generating reply: {e}")
-        yield f"data: {json.dumps({'response': f'Sorry, I could not reach the language model.'})}\n\n"
+        yield sse("Sorry, I could not reach the language model.")
     else:
-        save_turn(request.user_id, request.text, reply)
+        save_turn(user_id, user_text, reply)
     yield "data: [DONE]\n\n"
+
+
+async def generate_reply(request: ChatRequest):
+    route = await classify(request.user_id, request.text)
+    print(f"route={route} text={request.text!r}", flush=True)
+    if route == "off_topic":
+        # Not saved: a refusal must not become context the model can be talked out of.
+        yield sse(OFF_TOPIC_REFUSAL)
+        yield "data: [DONE]\n\n"
+        return
+
+    messages = [
+        SystemMessage(content=SYSTEM_PROMPT),
+        *get_history(request.user_id),
+        HumanMessage(content=request.text),
+    ]
+    async for event in stream_llm(messages, request.user_id, request.text):
+        yield event
     
 
 
