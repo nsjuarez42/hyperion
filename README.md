@@ -44,6 +44,7 @@ rag/
   embeddings.py      POST /embeddings on the LLM server
   text.py            tokenizing, stopwords.py, fusion.py, config.py
 knowledge/           the documents Hyperion answers from
+tests/               pytest, no LLM or IDE needed
 ```
 
 ## Run it
@@ -65,6 +66,14 @@ curl -N -X POST http://localhost:8000/chat \
 ```
 
 The browser calls this service directly, so the CORS middleware in `main.py` stays enabled.
+
+## Tests
+
+```bash
+uv run pytest
+```
+
+The tests cover what does not need the LLM or the IDE: routing rules, Spanish detection, yes/no parsing, sentence parsing, YAML templates, file naming, and keyword retrieval over `knowledge/`. They never call the model, even with a `.env` present.
 
 ## The chat protocol
 

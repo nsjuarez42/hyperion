@@ -12,3 +12,8 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "uvicorn>=0.34",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
