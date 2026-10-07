@@ -1,8 +1,12 @@
-import os
+"""HTTP calls to the IDE backend: read, validate, create, write and delete files.
+
+Each function raises an error whose message can be shown to the user (or the
+model) as is.
+"""
 
 import httpx
 
-IDE_BACKEND_URL = os.environ.get("IDE_BACKEND_URL", "http://localhost:3001/api")
+from agent.config import IDE_BACKEND_URL, IDE_TIMEOUT
 
 
 class ReadFileError(Exception):
@@ -21,7 +25,7 @@ async def read_file(path: str) -> str:
     message you can hand straight to a model.
     """
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=IDE_TIMEOUT) as client:
             response = await client.get(
                 f"{IDE_BACKEND_URL}/agent/file", params={"path": path}
             )
@@ -56,7 +60,7 @@ async def validate_file(path: str) -> dict:
     with a message you can hand straight to a model.
     """
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=IDE_TIMEOUT) as client:
             response = await client.get(
                 f"{IDE_BACKEND_URL}/agent/validation/file", params={"path": path}
             )
@@ -101,7 +105,7 @@ def _error_message(response: httpx.Response) -> str:
 async def create_workspace_file(path: str, content: str) -> None:
     """Create a new file. Fails if that path already exists."""
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=IDE_TIMEOUT) as client:
             response = await client.post(
                 f"{IDE_BACKEND_URL}/file/create",
                 json={"path": path, "content": content},
@@ -117,7 +121,7 @@ async def create_workspace_file(path: str, content: str) -> None:
 async def write_workspace_file(path: str, content: str) -> None:
     """Create or replace a file."""
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=IDE_TIMEOUT) as client:
             response = await client.post(
                 f"{IDE_BACKEND_URL}/file",
                 json={"path": path, "content": content},
@@ -133,7 +137,7 @@ async def write_workspace_file(path: str, content: str) -> None:
 async def delete_workspace_file(path: str) -> None:
     """Delete a file or folder. The IDE panel normally does this from an action event."""
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=IDE_TIMEOUT) as client:
             response = await client.delete(
                 f"{IDE_BACKEND_URL}/delete", params={"path": path}
             )

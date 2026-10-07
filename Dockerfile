@@ -6,7 +6,9 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-COPY main.py helpers.py rag.py ide_agent.py ./
+COPY main.py ./
+COPY agent ./agent
+COPY rag ./rag
 COPY knowledge ./knowledge
 
 ENV IDE_BACKEND_URL=http://host.docker.internal:3001/api

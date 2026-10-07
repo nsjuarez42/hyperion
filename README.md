@@ -21,7 +21,29 @@ data: {"action": "edit_file", "path": "nginx.yaml", "content": "..."}
 data: {"action": "delete_file", "path": "nginx.yaml"}
 ```
 
-`read_file` and `validate_file` in `helpers.py` call the IDE backend. From inside the agent container that address is `http://host.docker.internal:3001/api`.
+`agent/tools/ide_client.py` calls the IDE backend. From inside the agent container that address is `http://host.docker.internal:3001/api`.
+
+## Code layout
+
+```
+main.py              HTTP only: POST /chat streams SSE from agent.generate_reply
+agent/
+  chat.py            the flow for one message: pending yes/no, route, reply
+  router.py          classifies a message into hyperai | ide_action | chitchat | off_topic
+  memory.py          last 10 messages per user_id, one lock per user
+  prompts.py         every prompt and fixed reply
+  config.py          environment variables and limits
+  llm.py             the chat, router and tool LLM clients
+  sse.py             SSE event formatting
+  tools/             IDE actions: planner, IDE HTTP client, file ops, confirmation
+  templates/         YAML templates, service catalogue, sentence parsing, rendering
+rag/
+  retriever.py       BM25 + embeddings, fused by rank
+  chunking.py        knowledge/*.md into chunks
+  embeddings.py      POST /embeddings on the LLM server
+  text.py            tokenizing, stopwords.py, fusion.py, config.py
+knowledge/           the documents Hyperion answers from
+```
 
 ## Run it
 
