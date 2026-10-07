@@ -11,6 +11,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from agent.llm import tool_llm
 from agent.prompts import LLM_UNAVAILABLE, YAML_REPAIR, YAML_REQUEST, YAML_SYSTEM
 from agent.templates import render_profile
+from agent.templates.parsing import file_stem, service_name
+from agent.templates.services import SKIP_NAMES
 from agent.tools.confirm import pending
 from agent.tools.files import file_exists, format_report, save_yaml
 from agent.tools.ide_client import (
@@ -49,10 +51,32 @@ async def generate_yaml(
     return strip_fences(message_text(reply))
 
 
+def write_path(text: str, planned: str) -> str:
+    """Keep a file name the user gave; otherwise name the file after the service.
+
+    Left to the model, "create a deployment YAML for nginx" becomes
+    deployment.yaml one run and service.yaml the next. nginx.yaml is stable
+    and is what the user will ask about afterwards.
+    """
+    if planned:
+        file_name = planned.rsplit("/", 1)[-1]
+        stem = file_stem(planned)
+        if file_name.lower() in text.lower():
+            return planned
+        if stem.lower() not in SKIP_NAMES and re.search(
+            rf"\b{re.escape(stem)}\b", text, re.IGNORECASE
+        ):
+            return planned
+    name = service_name(text)
+    return f"{name}.yaml" if name else planned
+
+
 async def stream_ide_action(user_id: str, text: str, history: list):
     """Yield ("text"|"action"|"error", payload) for one IDE-action turn."""
     try:
         op, raw_path = await plan(text, history)
+        if op == "write":
+            raw_path = write_path(text, raw_path)
         path = clean_path(raw_path) if raw_path else ""
         print(f"ide op={op} path={path or '(none)'} user={user_id}", flush=True)
         if op in ("read", "validate", "delete") and not path:

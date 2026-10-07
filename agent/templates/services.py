@@ -23,6 +23,7 @@ SKIP_NAMES = {
     "file",
     "yaml",
     "yml",
+    "manifest",
     "app",
     "application",
     "profile",

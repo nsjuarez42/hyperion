@@ -63,6 +63,17 @@ def extract_image_ref(text: str) -> str | None:
     return None
 
 
+def service_name(request: str) -> str | None:
+    """The service the sentence is about (nginx, redis, ...), or None."""
+    ref = extract_image_ref(request)
+    if ref:
+        return basename_of(split_image(ref)[0]).lower()
+    for name in SERVICES:
+        if re.search(rf"\b{name}\b", request, re.IGNORECASE):
+            return name
+    return None
+
+
 def resolve_service(request: str, path: str) -> tuple[str, str, str, int, str]:
     """Return image, tag, entrypoint, port, and YAML args for a container."""
     stem = file_stem(path)
