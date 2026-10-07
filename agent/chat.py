@@ -10,6 +10,7 @@ Order of checks for every message:
    chitchat   -> answer with the conversation as context
 """
 
+import asyncio
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -42,11 +43,13 @@ retriever = Retriever(base_url=BASE_URL, api_key=API_KEY, embed_model=EMBED_MODE
 BARE_CONFIRMATION = re.compile(r"(yes|y|yep|no|n|nope|confirm|cancel)[.!]*", re.IGNORECASE)
 
 
-def system_prompt_for(route: str, question: str) -> str:
+async def system_prompt_for(route: str, question: str) -> str:
     """The plain system prompt, plus documentation excerpts for HYPER-AI questions."""
     if route != "hyperai":
         return SYSTEM_PROMPT
-    chunks = retriever.retrieve(question)
+    # retrieve() makes a blocking HTTP call for the query embedding; a thread
+    # keeps it from freezing every other user's stream while it waits.
+    chunks = await asyncio.to_thread(retriever.retrieve, question)
     print(f"rag={[chunk['source'] for chunk in chunks]}", flush=True)
     if chunks:
         context = "\n\n".join(
@@ -120,7 +123,7 @@ async def _reply(user_id: str, text: str):
         return
 
     messages = [
-        SystemMessage(content=system_prompt_for(route, text)),
+        SystemMessage(content=await system_prompt_for(route, text)),
         *get_history(user_id),
         HumanMessage(content=text),
     ]
