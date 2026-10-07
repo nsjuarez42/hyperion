@@ -613,6 +613,11 @@ def has_pending(user_id: str) -> bool:
     return user_id in pending
 
 
+def cancel_pending(user_id: str) -> dict | None:
+    """Drop a pending action when the user moves on instead of answering yes/no."""
+    return pending.pop(user_id, None)
+
+
 async def stream_pending(user_id: str, text: str):
     """A yes/no for a delete or overwrite is decided in code, not by the router."""
     action = pending.get(user_id)
