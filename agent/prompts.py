@@ -116,7 +116,64 @@ YAML_REPAIR = (
     "Reply with the corrected YAML only."
 )
 
-# --- Confirmation (human in the loop) ---
+# --- Fixed replies written in code, in English and Spanish ---
+# The model answers in the user's language by itself; these texts skip the
+# model, so they need both versions. Use reply(key, spanish, **values).
 
-NOTHING_PENDING = "There is nothing waiting for your confirmation right now."
-PENDING_CANCELLED = "(Cancelled the pending {op} of {path}.)\n\n"
+REPLIES = {
+    "en": {
+        "off_topic": OFF_TOPIC_REFUSAL,
+        "llm_unavailable": LLM_UNAVAILABLE,
+        "nothing_pending": "There is nothing waiting for your confirmation right now.",
+        "pending_cancelled": "(Cancelled the pending {op} of {path}.)\n\n",
+        "which_file": "Which file? Give me a path such as nginx.yaml.",
+        "confirm_delete": "I'm about to delete {path}{details}. Reply yes to confirm or no to cancel.",
+        "confirm_overwrite": "I'm about to overwrite {path}{details}. Reply yes to confirm or no to cancel.",
+        "still_waiting": "I'm still waiting. Reply yes to {op} {path}, or no to cancel.",
+        "cancelled": "Cancelled. I left {path} unchanged.",
+        "deleting": "Deleting {path}.",
+        "wrote": "Wrote {path} and opened it in the editor. {verdict}",
+        "overwrote": "Overwrote {path} and opened it in the editor. {verdict}",
+        "valid": "Validation passed.",
+        "valid_warnings": "Validation passed with {count} warning(s).",
+        "invalid": "Validation failed:",
+        "op_delete": "delete",
+        "op_overwrite": "overwrite",
+        "native_profile": "native application profile",
+        "device_manifest": "device manifest",
+        "yaml_file": "YAML file",
+        "image": "image {image}",
+        "lines": "{count} lines",
+        "currently": "currently: ",
+    },
+    "es": {
+        "off_topic": OFF_TOPIC_REFUSAL_ES,
+        "llm_unavailable": "Lo siento, no he podido contactar con el modelo de lenguaje.",
+        "nothing_pending": "No hay nada pendiente de confirmar ahora mismo.",
+        "pending_cancelled": "(He cancelado la acción pendiente: {op} {path}.)\n\n",
+        "which_file": "¿Qué archivo? Dame una ruta como nginx.yaml.",
+        "confirm_delete": "Voy a borrar {path}{details}. Responde sí para confirmar o no para cancelar.",
+        "confirm_overwrite": "Voy a sobrescribir {path}{details}. Responde sí para confirmar o no para cancelar.",
+        "still_waiting": "Sigo esperando. Responde sí para {op} {path}, o no para cancelar.",
+        "cancelled": "Cancelado. No he modificado {path}.",
+        "deleting": "Borrando {path}.",
+        "wrote": "He creado {path} y lo he abierto en el editor. {verdict}",
+        "overwrote": "He sobrescrito {path} y lo he abierto en el editor. {verdict}",
+        "valid": "La validación es correcta.",
+        "valid_warnings": "La validación es correcta, con {count} aviso(s).",
+        "invalid": "La validación ha fallado:",
+        "op_delete": "borrar",
+        "op_overwrite": "sobrescribir",
+        "native_profile": "perfil de aplicación nativa",
+        "device_manifest": "manifiesto de dispositivo",
+        "yaml_file": "archivo YAML",
+        "image": "imagen {image}",
+        "lines": "{count} líneas",
+        "currently": "ahora: ",
+    },
+}
+
+
+def reply(key: str, spanish: bool = False, **values) -> str:
+    """A fixed reply in the user's language, with its {placeholders} filled."""
+    return REPLIES["es" if spanish else "en"][key].format(**values)

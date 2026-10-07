@@ -14,9 +14,18 @@ SPANISH_WORDS = re.compile(
     re.IGNORECASE,
 )
 
+# Words that exist only in Spanish: one is enough, so short commands such as
+# "borra app.yaml" or "vale" are recognised.
+SPANISH_ONLY = re.compile(
+    r"\b(borra|borrar|elimina|eliminar|crea|crear|genera|muestra|ense[nñ]a|abre|valida"
+    r"|despliega|archivo|fichero|perfil|vale|hola|gracias|cancela|cancelar|hazlo|dime"
+    r"|cu[eé]ntame|llamo|qu[eé]|c[oó]mo)\b",
+    re.IGNORECASE,
+)
+
 
 def is_spanish(text: str) -> bool:
-    """Spanish punctuation/accents, or at least two common Spanish words."""
-    if SPANISH_CHARACTERS.search(text):
+    """Spanish punctuation/accents, a Spanish-only word, or two common Spanish words."""
+    if SPANISH_CHARACTERS.search(text) or SPANISH_ONLY.search(text):
         return True
     return len(set(word.lower() for word in SPANISH_WORDS.findall(text))) >= 2

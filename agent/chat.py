@@ -20,13 +20,9 @@ from agent.language import is_spanish
 from agent.llm import chat_llm
 from agent.memory import get_history, save_turn, session_lock
 from agent.prompts import (
-    LLM_UNAVAILABLE,
-    NOTHING_PENDING,
-    OFF_TOPIC_REFUSAL,
-    OFF_TOPIC_REFUSAL_ES,
-    PENDING_CANCELLED,
     RAG_PROMPT,
     SYSTEM_PROMPT,
+    reply,
 )
 from agent.router import classify
 from agent.sse import DONE, sse
@@ -42,7 +38,9 @@ from rag import Retriever
 # Built once at startup: chunks the knowledge base and embeds it.
 retriever = Retriever(base_url=BASE_URL, api_key=API_KEY, embed_model=EMBED_MODEL)
 
-BARE_CONFIRMATION = re.compile(r"(yes|y|yep|no|n|nope|confirm|cancel)[.!]*", re.IGNORECASE)
+BARE_CONFIRMATION = re.compile(
+    r"[¡¿]?(yes|y|yep|no|n|nope|confirm|cancel|sí|si|vale|cancela)[.!?]*", re.IGNORECASE
+)
 
 
 async def system_prompt_for(route: str, question: str) -> str:
@@ -62,43 +60,45 @@ async def system_prompt_for(route: str, question: str) -> str:
     return RAG_PROMPT.format(system_prompt=SYSTEM_PROMPT, context=context)
 
 
-async def stream_llm(messages: list, user_id: str, user_text: str):
+async def stream_llm(messages: list, user_id: str, user_text: str, spanish: bool = False):
     """Stream the model's answer; save the turn only if it completed."""
-    reply = ""
+    answer = ""
     try:
         async for chunk in chat_llm.astream(messages):
             if chunk.text:
-                reply += chunk.text
+                answer += chunk.text
                 yield sse(chunk.text)
     except Exception as e:
         print(f"Error generating reply: {e}")
-        yield sse(LLM_UNAVAILABLE)
+        yield sse(reply("llm_unavailable", spanish))
     else:
-        save_turn(user_id, user_text, reply)
+        save_turn(user_id, user_text, answer)
     yield DONE
 
 
 async def _reply(user_id: str, text: str):
+    spanish = is_spanish(text)
     if has_pending(user_id) and interpret_confirmation(text) is None:
         # Not a yes/no: the user moved on, so drop the pending action and handle
         # the new message normally instead of blocking the chat until they answer.
         action = cancel_pending(user_id)
-        yield sse(PENDING_CANCELLED.format(op=action["op"], path=action["path"]))
+        op = reply(f"op_{action['op']}", spanish)
+        yield sse(reply("pending_cancelled", spanish, op=op, path=action["path"]))
 
     if has_pending(user_id):
-        reply = ""
+        answer = ""
         async for kind, payload in stream_pending(user_id, text):
             if kind == "text":
-                reply = payload
+                answer = payload
             yield sse(payload)
-        save_turn(user_id, text, reply)
+        save_turn(user_id, text, answer)
         yield DONE
         return
 
     if BARE_CONFIRMATION.fullmatch(text.strip()):
         # A lone yes/no with nothing pending must not reach the planner, which
         # would guess an action (even a delete) from the conversation history.
-        yield sse(NOTHING_PENDING)
+        yield sse(reply("nothing_pending", spanish))
         yield DONE
         return
 
@@ -106,21 +106,21 @@ async def _reply(user_id: str, text: str):
     print(f"route={route} text={text!r}", flush=True)
     if route == "off_topic":
         # Not saved: a refusal must not become context the model can be talked out of.
-        yield sse(OFF_TOPIC_REFUSAL_ES if is_spanish(text) else OFF_TOPIC_REFUSAL)
+        yield sse(reply("off_topic", spanish))
         yield DONE
         return
 
     if route == "ide_action":
-        reply = ""
+        answer = ""
         failed = False
         async for kind, payload in stream_ide_action(user_id, text, get_history(user_id)):
             if kind == "error":
                 failed = True
             elif kind == "text":
-                reply = payload
+                answer = payload
             yield sse(payload)
         if not failed:
-            save_turn(user_id, text, reply)
+            save_turn(user_id, text, answer)
         yield DONE
         return
 
@@ -129,7 +129,7 @@ async def _reply(user_id: str, text: str):
         *get_history(user_id),
         HumanMessage(content=text),
     ]
-    async for event in stream_llm(messages, user_id, text):
+    async for event in stream_llm(messages, user_id, text, spanish):
         yield event
 
 

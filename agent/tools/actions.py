@@ -9,12 +9,13 @@ import re
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.llm import tool_llm
-from agent.prompts import LLM_UNAVAILABLE, YAML_REPAIR, YAML_REQUEST, YAML_SYSTEM
+from agent.language import is_spanish
+from agent.prompts import YAML_REPAIR, YAML_REQUEST, YAML_SYSTEM, reply
 from agent.templates import render_profile
 from agent.templates.parsing import file_stem, service_name
 from agent.templates.services import SKIP_NAMES
 from agent.tools.confirm import pending
-from agent.tools.files import file_exists, format_report, save_yaml
+from agent.tools.files import describe_yaml, format_report, read_existing, save_yaml
 from agent.tools.ide_client import (
     ReadFileError,
     ValidateFileError,
@@ -45,10 +46,10 @@ async def generate_yaml(
         human = YAML_REPAIR.format(path=path, request=request, errors=errors, previous=previous)
     else:
         human = YAML_REQUEST.format(path=path, request=request)
-    reply = await tool_llm.ainvoke(
+    response = await tool_llm.ainvoke(
         [SystemMessage(content=YAML_SYSTEM), HumanMessage(content=human)]
     )
-    return strip_fences(message_text(reply))
+    return strip_fences(message_text(response))
 
 
 def write_path(text: str, planned: str) -> str:
@@ -73,6 +74,7 @@ def write_path(text: str, planned: str) -> str:
 
 async def stream_ide_action(user_id: str, text: str, history: list):
     """Yield ("text"|"action"|"error", payload) for one IDE-action turn."""
+    spanish = is_spanish(text)
     try:
         op, raw_path = await plan(text, history)
         if op == "write":
@@ -80,7 +82,7 @@ async def stream_ide_action(user_id: str, text: str, history: list):
         path = clean_path(raw_path) if raw_path else ""
         print(f"ide op={op} path={path or '(none)'} user={user_id}", flush=True)
         if op in ("read", "validate", "delete") and not path:
-            yield ("text", "Which file? Give me a path such as nginx.yaml.")
+            yield ("text", reply("which_file", spanish))
             return
         if op == "read":
             try:
@@ -96,38 +98,42 @@ async def stream_ide_action(user_id: str, text: str, history: list):
             except ValidateFileError as exc:
                 yield ("text", str(exc))
                 return
-            yield ("text", f"{path}: {format_report(report)}")
+            yield ("text", f"{path}: {format_report(report, spanish)}")
             return
         if op == "delete":
-            if not await file_exists(path):
+            current = await read_existing(path)
+            if current is None:
                 yield ("text", f"{path} is not in the workspace")
                 return
-            pending[user_id] = {"op": "delete", "path": path}
-            yield (
-                "text",
-                f"I'm about to delete {path}. Reply yes to confirm or no to cancel.",
-            )
+            # Say what will be lost, so the yes/no is an informed one.
+            pending[user_id] = {"op": "delete", "path": path, "spanish": spanish}
+            details = f" ({describe_yaml(current, spanish)})"
+            yield ("text", reply("confirm_delete", spanish, path=path, details=details))
             return
 
         content = render_profile(text, path)
-        if await file_exists(path):
-            pending[user_id] = {"op": "overwrite", "path": path, "content": content}
-            yield (
-                "text",
-                f"I'm about to overwrite {path}. Reply yes to confirm or no to cancel.",
-            )
+        current = await read_existing(path)
+        if current is not None:
+            pending[user_id] = {
+                "op": "overwrite",
+                "path": path,
+                "content": content,
+                "spanish": spanish,
+            }
+            details = f" ({reply('currently', spanish)}{describe_yaml(current, spanish)})"
+            yield ("text", reply("confirm_overwrite", spanish, path=path, details=details))
             return
         report = await save_yaml(path, content)
         if not report.get("valid"):
             content = await generate_yaml(text, path, content, format_report(report))
             report = await save_yaml(path, content)
-        verdict = format_report(report)
+        verdict = format_report(report, spanish)
         print(f"tool=write path={path} valid={report.get('valid')}", flush=True)
-        yield ("text", f"Wrote {path} and opened it in the editor. {verdict}")
+        yield ("text", reply("wrote", spanish, path=path, verdict=verdict))
         yield ("action", {"action": "edit_file", "path": path, "content": content})
     except (ReadFileError, ValidateFileError, WriteFileError) as exc:
         print(f"IDE action failed for {user_id}: {exc}")
         yield ("text", str(exc))
     except Exception as exc:
         print(f"IDE action error for {user_id}: {exc}")
-        yield ("error", LLM_UNAVAILABLE)
+        yield ("error", reply("llm_unavailable", spanish))

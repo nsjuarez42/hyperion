@@ -89,11 +89,14 @@ def fallback_plan(text: str) -> tuple[str, str]:
     named = re.search(r"([\w./-]+\.ya?ml)", text, flags=re.IGNORECASE)
     path = named.group(1) if named else ""
     lowered = text.lower()
-    if any(word in lowered for word in ("delete", "remove")):
+    if any(word in lowered for word in ("delete", "remove", "borra", "elimina")):
         return "delete", path
-    if "valid" in lowered:
+    if "valid" in lowered:  # also "valida"
         return "validate", path
-    if any(word in lowered for word in ("show", "read", "open", "display", "cat ")):
+    if any(
+        word in lowered
+        for word in ("show", "read", "open", "display", "cat ", "muestra", "enseña", "abre", "lee")
+    ):
         return "read", path
     if not path:
         path = "nginx.yaml" if "nginx" in lowered else "app.yaml"
