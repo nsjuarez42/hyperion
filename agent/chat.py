@@ -35,8 +35,24 @@ from agent.tools import (
 )
 from rag import Retriever
 
-# Built once at startup: chunks the knowledge base and embeds it.
-retriever = Retriever(base_url=BASE_URL, api_key=API_KEY, embed_model=EMBED_MODEL)
+_retriever: Retriever | None = None
+
+
+def get_retriever() -> Retriever:
+    """The retriever, built on first use: it chunks and embeds the knowledge base.
+
+    Not built at import time, so importing the agent (tests, tools) never calls
+    the embedding server. main.py calls warm_up() at startup instead.
+    """
+    global _retriever
+    if _retriever is None:
+        _retriever = Retriever(base_url=BASE_URL, api_key=API_KEY, embed_model=EMBED_MODEL)
+    return _retriever
+
+
+def warm_up() -> None:
+    """Build the retriever before the first request, so no user waits for it."""
+    get_retriever()
 
 BARE_CONFIRMATION = re.compile(
     r"[¡¿]?(yes|y|yep|no|n|nope|confirm|cancel|sí|si|vale|cancela)[.!?]*", re.IGNORECASE
@@ -49,7 +65,7 @@ async def system_prompt_for(route: str, question: str) -> str:
         return SYSTEM_PROMPT
     # retrieve() makes a blocking HTTP call for the query embedding; a thread
     # keeps it from freezing every other user's stream while it waits.
-    chunks = await asyncio.to_thread(retriever.retrieve, question)
+    chunks = await asyncio.to_thread(get_retriever().retrieve, question)
     print(f"rag={[chunk['source'] for chunk in chunks]}", flush=True)
     if chunks:
         context = "\n\n".join(

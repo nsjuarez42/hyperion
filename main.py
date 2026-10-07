@@ -1,14 +1,25 @@
 """HTTP entry point: the IDE posts each chat message to POST /chat and reads
 the reply as Server-Sent Events. Everything else lives in agent/ and rag/."""
 
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from agent import generate_reply
+from agent import generate_reply, warm_up
 
-app = FastAPI(title="Hyperion Agent")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Chunk and embed the knowledge base before the server accepts requests.
+    await asyncio.to_thread(warm_up)
+    yield
+
+
+app = FastAPI(title="Hyperion Agent", lifespan=lifespan)
 
 # The IDE frontend calls this service straight from the browser.
 app.add_middleware(
