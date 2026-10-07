@@ -123,10 +123,7 @@ async def stream_ide_action(user_id: str, text: str, history: list):
             report = await save_yaml(path, content)
         verdict = format_report(report)
         print(f"tool=write path={path} valid={report.get('valid')}", flush=True)
-        if report.get("valid"):
-            yield ("text", f"Wrote {path} and opened it in the editor. {verdict}")
-        else:
-            yield ("text", f"Wrote {path} and opened it in the editor. {verdict}")
+        yield ("text", f"Wrote {path} and opened it in the editor. {verdict}")
         yield ("action", {"action": "edit_file", "path": path, "content": content})
     except (ReadFileError, ValidateFileError, WriteFileError) as exc:
         print(f"IDE action failed for {user_id}: {exc}")
