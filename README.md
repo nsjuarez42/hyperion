@@ -6,12 +6,13 @@ The model is `llama3.1` through an OpenAI-compatible API. `API_KEY`, `BASE_URL`,
 
 ## What it does
 
-Each message is classified, then handled in code:
+Each message is classified (keyword rules for obvious cases, then the model), then handled in code:
 
 - **HYPER-AI questions** are answered only from the documents in `knowledge/` (project deliverables and the IDE's native-app and device-app specs). Keyword search and embeddings are combined. If the documents do not contain the answer, Hyperion says it does not know.
 - **Anything else** (weather, news, jokes, prompt injection) gets one fixed refusal and does not call the model.
 - **Greetings and this conversation** are answered normally. Memory is per `user_id`, in the running process, and keeps the last 10 messages.
-- **File requests** create, show, validate, or delete a file in the IDE workspace. A service becomes a native application profile. A phone, Android APK, or ESP32 becomes a device manifest. The image, tag, and port are taken from the sentence. The IDE validator checks the file. Delete and overwrite wait until the user replies yes or no.
+- **File requests** create, show, validate, or delete a file in the IDE workspace. A service becomes a native application profile. A phone, Android APK, or ESP32 becomes a device manifest. The image, tag, and port are taken from the sentence. The IDE validator checks the file. Delete and overwrite first say what the file contains (for example "native application profile, image nginx:1.27, 30 lines") and wait until the user replies yes or no; any other message cancels the pending action.
+- **Spanish** works throughout: the model answers in the user's language, and the fixed replies (refusal, IDE results, confirmations) have Spanish versions.
 
 File changes are IDE actions in the stream, not chat text:
 
