@@ -24,11 +24,19 @@ def image_ref(image: str, tag: str) -> str:
     return f"{image}:{tag}"
 
 
+# "port 8080", "puerto 8080", "on 8080" (4-5 digits only, so "on 10 nodes" is
+# not a port) and " :8080" (after a space, so the tag in "postgres:16" is not).
+PORT = re.compile(
+    r"\b(?:port|puerto)\s*(\d{2,5})\b|\bon\s+(\d{4,5})\b|(?:^|\s):(\d{2,5})\b",
+    re.IGNORECASE,
+)
+
+
 def extract_port(text: str, default: int) -> int:
-    match = re.search(r"\bport\s+(\d{2,5})\b", text, re.IGNORECASE)
+    match = PORT.search(text)
     if not match:
         return default
-    port = int(match.group(1))
+    port = int(next(group for group in match.groups() if group))
     return port if 1 <= port <= 65535 else default
 
 
