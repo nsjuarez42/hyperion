@@ -35,6 +35,7 @@ agent/
   config.py          environment variables and limits
   llm.py             the chat, router and tool LLM clients
   sse.py             SSE event formatting
+  language.py        Spanish or English, for the fixed refusal
   tools/             IDE actions: planner, IDE HTTP client, file ops, confirmation
   templates/         YAML templates, service catalogue, sentence parsing, rendering
 rag/

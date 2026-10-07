@@ -16,12 +16,14 @@ import re
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.config import API_KEY, BASE_URL, EMBED_MODEL
+from agent.language import is_spanish
 from agent.llm import chat_llm
 from agent.memory import get_history, save_turn, session_lock
 from agent.prompts import (
     LLM_UNAVAILABLE,
     NOTHING_PENDING,
     OFF_TOPIC_REFUSAL,
+    OFF_TOPIC_REFUSAL_ES,
     PENDING_CANCELLED,
     RAG_PROMPT,
     SYSTEM_PROMPT,
@@ -104,7 +106,7 @@ async def _reply(user_id: str, text: str):
     print(f"route={route} text={text!r}", flush=True)
     if route == "off_topic":
         # Not saved: a refusal must not become context the model can be talked out of.
-        yield sse(OFF_TOPIC_REFUSAL)
+        yield sse(OFF_TOPIC_REFUSAL_ES if is_spanish(text) else OFF_TOPIC_REFUSAL)
         yield DONE
         return
 

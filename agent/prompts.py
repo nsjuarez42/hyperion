@@ -6,6 +6,7 @@ SYSTEM_PROMPT = """You are Hyperion, the assistant inside the HYPER-AI IDE.
 Answer only about HYPER-AI, its platform, and this IDE.
 You have no internet access and no real-time data. If you are not sure, say "I don't know".
 When the user disagrees with you, check the conversation and correct yourself if they are right. Do not agree just to be polite.
+Reply in the user's language, but keep technical terms in English instead of translating them (edge device, DeviceNode, self-CHOP, swarm, cloud, application profile).
 Keep answers short and concise."""
 
 RAG_PROMPT = """{system_prompt}
@@ -21,6 +22,11 @@ Documentation:
 OFF_TOPIC_REFUSAL = (
     "I can only help with HYPER-AI and the HyperAI IDE. "
     "Try asking what HYPER-AI is, or ask me to create a deployment YAML."
+)
+
+OFF_TOPIC_REFUSAL_ES = (
+    "Solo puedo ayudarte con HYPER-AI y el HyperAI IDE. "
+    "Prueba a preguntar qué es HYPER-AI, o pídeme que cree un YAML de despliegue."
 )
 
 LLM_UNAVAILABLE = "Sorry, I could not reach the language model."
